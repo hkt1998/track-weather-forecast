@@ -1,0 +1,17 @@
+schema_version: 1
+module_path: ""
+title: Next.js 应用根配置与脚手架
+scope:
+    - .gitignore
+    - AGENTS.md
+    - CLAUDE.md
+    - README.md
+    - eslint.config.mjs
+    - next.config.ts
+    - package.json
+    - package-lock.json
+    - postcss.config.mjs
+    - tsconfig.json
+source_files: []
+depends_on: []
+related_to: []
