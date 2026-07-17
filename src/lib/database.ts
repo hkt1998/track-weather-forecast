@@ -36,6 +36,12 @@ export interface SegmentRecord {
 
 // --- IndexedDB Schema ---
 
+export interface WeatherCacheRecord {
+  routeId: number;
+  weatherJson: string;
+  cachedAt: string;
+}
+
 interface GpxDB extends DBSchema {
   routes: {
     key: number;
@@ -47,28 +53,38 @@ interface GpxDB extends DBSchema {
     value: SegmentRecord;
     indexes: { "by-route": number };
   };
+  weatherCache: {
+    key: number;
+    value: WeatherCacheRecord;
+    indexes: {};
+  };
 }
 
 const DB_NAME = "gpx-weather-db";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBPDatabase<GpxDB>> | null = null;
 
 function getDb(): Promise<IDBPDatabase<GpxDB>> {
   if (!dbPromise) {
     dbPromise = openDB<GpxDB>(DB_NAME, DB_VERSION, {
-      upgrade(db) {
-        const routeStore = db.createObjectStore("routes", {
-          keyPath: "id",
-          autoIncrement: true,
-        });
-        routeStore.createIndex("by-created", "created_at");
+      upgrade(db, oldVersion) {
+        if (oldVersion < 1) {
+          const routeStore = db.createObjectStore("routes", {
+            keyPath: "id",
+            autoIncrement: true,
+          });
+          routeStore.createIndex("by-created", "created_at");
 
-        const segStore = db.createObjectStore("segments", {
-          keyPath: "id",
-          autoIncrement: true,
-        });
-        segStore.createIndex("by-route", "route_id");
+          const segStore = db.createObjectStore("segments", {
+            keyPath: "id",
+            autoIncrement: true,
+          });
+          segStore.createIndex("by-route", "route_id");
+        }
+        if (oldVersion < 2) {
+          db.createObjectStore("weatherCache", { keyPath: "routeId" });
+        }
       },
     });
   }
@@ -167,6 +183,17 @@ export async function getRouteById(
   allSegs.sort((a, b) => a.point_index - b.point_index);
 
   return { ...route, segments: allSegs };
+}
+
+export async function saveWeatherCache(routeId: number, weatherJson: string): Promise<void> {
+  const db = await getDb();
+  await db.put("weatherCache", { routeId, weatherJson, cachedAt: new Date().toISOString() });
+}
+
+export async function getWeatherCache(routeId: number): Promise<WeatherCacheRecord | null> {
+  const db = await getDb();
+  const record = await db.get("weatherCache", routeId);
+  return record ?? null;
 }
 
 export async function deleteRoute(id: number): Promise<boolean> {

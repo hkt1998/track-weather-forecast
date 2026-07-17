@@ -12,12 +12,20 @@ export interface DailyWeather {
   lightningRisk: "none" | "low" | "moderate" | "high";
 }
 
+export interface HourlyWeather {
+  time: string[];                    // 24 hourly timestamps
+  temperature: number[];             // 24 hourly temperatures (°C)
+  precipitationProbability: number[]; // 24 hourly precipitation probabilities (%)
+  weatherCode: number[];             // 24 hourly WMO weather codes
+}
+
 export interface PointWeather {
   point: SamplePoint;
   arrivalDate: string | null; // YYYY-MM-DD of estimated arrival
   arrivalTime: string | null; // HH:MM
   weather: DailyWeather | null; // weather for arrival date
   forecast: DailyWeather[]; // full 7-day forecast
+  hourly?: HourlyWeather | null; // hourly data for arrival day
 }
 
 export interface WeatherResult {
@@ -223,7 +231,7 @@ async function fetchSinglePointWeather(
     longitude: point.lon.toString(),
     daily:
       "temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,weathercode,windspeed_10m_max,winddirection_10m_dominant",
-    hourly: "weathercode",
+    hourly: "weathercode,temperature_2m,precipitation_probability",
     timezone: "auto",
     start_date: startDate,
     end_date: endDate,
@@ -242,6 +250,34 @@ async function fetchSinglePointWeather(
 
   // Parse hourly weather codes for lightning enhancement
   const hourlyCodes: number[] = data.hourly?.weathercode ?? [];
+
+  // Extract full hourly data for arrival day
+  let hourly: HourlyWeather | null = null;
+  if (arrivalDate && data.hourly?.time) {
+    // Find the day index for arrival date
+    const dayIndex = data.daily?.time?.indexOf(arrivalDate) ?? -1;
+    if (dayIndex >= 0) {
+      const dayStart = dayIndex * 24;
+      const dayEnd = dayStart + 24;
+      if (dayEnd <= data.hourly.time.length) {
+        hourly = {
+          time: data.hourly.time.slice(dayStart, dayEnd),
+          temperature: (data.hourly.temperature_2m ?? []).slice(dayStart, dayEnd),
+          precipitationProbability: (data.hourly.precipitation_probability ?? []).slice(dayStart, dayEnd),
+          weatherCode: hourlyCodes.slice(dayStart, dayEnd),
+        };
+      }
+    }
+    // Fallback: if no arrival date match but we have hourly data, take first 24
+    if (!hourly && data.hourly.time.length >= 24) {
+      hourly = {
+        time: data.hourly.time.slice(0, 24),
+        temperature: (data.hourly.temperature_2m ?? []).slice(0, 24),
+        precipitationProbability: (data.hourly.precipitation_probability ?? []).slice(0, 24),
+        weatherCode: hourlyCodes.slice(0, 24),
+      };
+    }
+  }
 
   const forecast: DailyWeather[] = [];
   if (data.daily) {
@@ -283,5 +319,5 @@ async function fetchSinglePointWeather(
     weather = forecast[0];
   }
 
-  return { point, arrivalDate, arrivalTime, weather, forecast };
+  return { point, arrivalDate, arrivalTime, weather, forecast, hourly };
 }

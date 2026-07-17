@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useState, lazy } from "react";
+import { Suspense, useEffect, useMemo, useState, lazy } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import WeatherTable from "@/components/WeatherTable";
 import AdvicePanel from "@/components/AdvicePanel";
@@ -21,6 +21,11 @@ import { queryWeather } from "@/lib/weather-query";
 import { getRouteById } from "@/lib/database";
 import { recordRecentTime } from "@/lib/recent-times";
 import DateTimePicker from "@/components/DateTimePicker";
+import DangerBanner from "@/components/DangerBanner";
+import GearPanel from "@/components/GearPanel";
+import { recommendEquipment } from "@/lib/gear-recommender";
+import { exportToImage, exportToPDF, generateOfflineSummary } from "@/lib/export-utils";
+import PosterGenerator from "@/components/PosterGenerator";
 
 const WeatherMap = lazy(() => import("@/components/WeatherMap"));
 
@@ -46,6 +51,7 @@ export default function ResultPage() {
   const [data, setData] = useState<ResultData | null>(null);
   const [loading, setLoading] = useState(true);
   const [showRequery, setShowRequery] = useState(false);
+  const [showPoster, setShowPoster] = useState(false);
   const [requeryTime, setRequeryTime] = useState("");
   const [isRequerying, setIsRequerying] = useState(false);
 
@@ -55,6 +61,17 @@ export default function ResultPage() {
     km: 5,
   });
   const [isResampling, setIsResampling] = useState(false);
+
+  // 导出下拉菜单状态
+  const [showExportDropdown, setShowExportDropdown] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [copiedText, setCopiedText] = useState(false);
+
+  // 装备推荐缓存
+  const gearItems = useMemo(
+    () => recommendEquipment(data?.segments ?? [], data?.activityType ?? ""),
+    [data?.segments, data?.activityType]
+  );
 
   useEffect(() => {
     const idParam = searchParams.get("id");
@@ -419,6 +436,69 @@ export default function ResultPage() {
               </span>
             )}
             <button
+              onClick={() => navigate("/compare")}
+              className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950 rounded-lg transition-colors"
+            >
+              🔀 对比视图
+            </button>
+            {/* Export dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setShowExportDropdown((v) => !v)}
+                disabled={isExporting}
+                className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950 rounded-lg transition-colors flex items-center gap-1"
+              >
+                {isExporting ? (
+                  <>
+                    <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                    导出中...
+                  </>
+                ) : (
+                  <>📥 导出 <span className="text-xs">▼</span></>
+                )}
+              </button>
+              {showExportDropdown && (
+                <div className="absolute right-0 top-full mt-1 w-44 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg z-50 overflow-hidden">
+                  <button
+                    onClick={async () => {
+                      setIsExporting(true);
+                      try { await exportToImage("result-content"); } catch {}
+                      setIsExporting(false);
+                      setShowExportDropdown(false);
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  >
+                    📷 下载图片
+                  </button>
+                  <button
+                    onClick={() => { exportToPDF(); setShowExportDropdown(false); }}
+                    className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  >
+                    📄 打印/保存PDF
+                  </button>
+                  <button
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(generateOfflineSummary(data));
+                        setCopiedText(true);
+                        setTimeout(() => setCopiedText(false), 2000);
+                      } catch {}
+                      setShowExportDropdown(false);
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  >
+                    {copiedText ? "✅ 已复制" : "📋 复制文本摘要"}
+                  </button>
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => setShowPoster(true)}
+              className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950 rounded-lg transition-colors"
+            >
+              🎨 生成海报
+            </button>
+            <button
               onClick={() => navigate("/history")}
               className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950 rounded-lg transition-colors"
             >
@@ -428,8 +508,13 @@ export default function ResultPage() {
         </div>
       </header>
 
+      {/* Extreme weather danger banner */}
+      {data.overallAdvices.some((a) => a.level === "danger") && (
+        <DangerBanner advices={data.overallAdvices} segments={data.segments} />
+      )}
+
       {/* Main content */}
-      <main className="max-w-7xl mx-auto p-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <main id="result-content" className="max-w-7xl mx-auto p-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Map - takes 2 columns on large screens */}
         <div className="lg:col-span-2 h-[500px] lg:h-[600px]">
           <Suspense
@@ -584,6 +669,14 @@ export default function ResultPage() {
                 天气恶劣
               </span>
             </div>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+              路线颜色反映各路段天气风险等级
+            </p>
+          </div>
+
+          {/* Equipment recommendations */}
+          <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+            <GearPanel items={gearItems} activityType={data.activityType} />
           </div>
         </div>
 
@@ -678,6 +771,40 @@ export default function ResultPage() {
           <WeatherTable segments={data.segments} />
         </div>
       </main>
+
+      {/* Poster Modal */}
+      {showPoster && (
+        <div
+          className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4"
+          onClick={() => setShowPoster(false)}
+        >
+          <div
+            className="bg-white dark:bg-gray-900 rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-bold text-lg text-gray-900 dark:text-white">
+                🎨 行程天气海报
+              </h2>
+              <button
+                onClick={() => setShowPoster(false)}
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+            <PosterGenerator
+              name={data.name}
+              totalDistance={data.totalDistance}
+              allPoints={data.allPoints}
+              segments={data.segments}
+              summary={data.summary}
+              activityType={data.activityType}
+              startTime={data.startTime}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

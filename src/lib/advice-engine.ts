@@ -1,6 +1,7 @@
 import {
   PointWeather,
   DailyWeather,
+  HourlyWeather,
   getWeatherDescription,
   getWindDirectionLabel,
   getWindDirectionArrow,
@@ -23,6 +24,7 @@ export interface SegmentAdvice {
   arrivalTime: string | null;
   weather: DailyWeather | null;
   advices: Advice[];
+  hourly?: HourlyWeather | null;
 }
 
 export interface AdviceResult {
@@ -171,6 +173,7 @@ export function generateAdvice(
       arrivalTime: pw.arrivalTime,
       weather,
       advices,
+      hourly: pw.hourly ?? null,
     });
 
     allAdvices.push(...advices);

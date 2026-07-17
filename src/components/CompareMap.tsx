@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -66,7 +67,7 @@ export default function CompareMap({ routes }: CompareMapProps) {
         ]);
 
         return (
-          <>
+          <Fragment key={`route-${route.id}`}>
             {/* Track line */}
             <Polyline
               key={`line-${route.id}`}
@@ -147,7 +148,7 @@ export default function CompareMap({ routes }: CompareMapProps) {
                 </CircleMarker>
               );
             })}
-          </>
+          </Fragment>
         );
       })}
 

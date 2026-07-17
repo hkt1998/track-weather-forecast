@@ -5,7 +5,7 @@ import {
 } from "./gpx-parser";
 import { fetchWeatherForPoints } from "./weather-service";
 import { generateAdvice, AdviceResult } from "./advice-engine";
-import { insertRoute } from "./database";
+import { insertRoute, saveWeatherCache } from "./database";
 
 export interface WeatherQueryResult {
   weather: ReturnType<typeof fetchWeatherForPoints> extends Promise<infer T>
@@ -84,9 +84,18 @@ export async function queryWeather(params: {
     console.error("Failed to save route to database:", dbError);
   }
 
-  return {
+  const result: WeatherQueryResult = {
     weather: weatherResult,
     advice: adviceResult,
     routeId,
   };
+
+  // Fire-and-forget: cache weather data for offline use
+  if (routeId !== null) {
+    saveWeatherCache(routeId, JSON.stringify(result)).catch((err) =>
+      console.error("Failed to cache weather:", err)
+    );
+  }
+
+  return result;
 }
