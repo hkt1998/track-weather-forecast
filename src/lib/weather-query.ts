@@ -68,7 +68,10 @@ export async function queryWeather(params: {
         tempMax: seg.weather?.tempMax ?? null,
         tempMin: seg.weather?.tempMin ?? null,
         precipProb: seg.weather?.precipitationProbability ?? null,
+        precipSum: seg.weather?.precipitationSum ?? null,
         windSpeedMax: seg.weather?.windSpeedMax ?? null,
+        windDirection: seg.weather?.windDirection ?? null,
+        lightningRisk: seg.weather?.lightningRisk ?? null,
         adviceLevel: seg.advices.some((a) => a.level === "danger")
           ? "danger"
           : seg.advices.some((a) => a.level === "warning")

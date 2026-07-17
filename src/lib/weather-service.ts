@@ -5,8 +5,11 @@ export interface DailyWeather {
   tempMax: number;
   tempMin: number;
   precipitationProbability: number;
+  precipitationSum: number; // daily total precipitation in mm
   windSpeedMax: number;
+  windDirection: number | null; // dominant wind direction in degrees
   weatherCode: number;
+  lightningRisk: "none" | "low" | "moderate" | "high";
 }
 
 export interface PointWeather {
@@ -66,6 +69,96 @@ export function getWeatherIcon(code: number): string {
   if (code <= 82) return "🌧️";
   if (code <= 86) return "❄️";
   return "⛈️";
+}
+
+/**
+ * Determine lightning risk from WMO weather code.
+ * 95 = thunderstorm, 96 = thunderstorm + small hail, 99 = thunderstorm + heavy hail
+ */
+export function getLightningRisk(weatherCode: number): "none" | "low" | "moderate" | "high" {
+  if (weatherCode >= 99) return "high"; // Thunderstorm + heavy hail
+  if (weatherCode >= 96) return "high"; // Thunderstorm + small hail
+  if (weatherCode >= 95) return "moderate"; // Thunderstorm
+  // Showers / overcast with storm potential
+  if (weatherCode >= 80) return "low";
+  return "none";
+}
+
+/**
+ * Enhance lightning risk using hourly weather codes around arrival time.
+ * If hourly data shows thunderstorm during arrival window, upgrade risk level.
+ */
+export function enhanceLightningRisk(
+  baseRisk: "none" | "low" | "moderate" | "high",
+  hourlyCodes: number[],
+  arrivalHour: number | null
+): "none" | "low" | "moderate" | "high" {
+  if (arrivalHour == null || hourlyCodes.length === 0) return baseRisk;
+
+  // Check ±2 hours around arrival time
+  const startIdx = Math.max(0, arrivalHour - 2);
+  const endIdx = Math.min(hourlyCodes.length - 1, arrivalHour + 2);
+
+  for (let i = startIdx; i <= endIdx; i++) {
+    const code = hourlyCodes[i];
+    if (code >= 95) {
+      // Thunderstorm detected in arrival window — upgrade to at least moderate
+      if (code >= 96) return "high";
+      return baseRisk === "high" ? "high" : "moderate";
+    }
+  }
+  return baseRisk;
+}
+
+/**
+ * Convert wind direction degrees to compass label
+ */
+export function getWindDirectionLabel(degrees: number | null): string {
+  if (degrees == null) return "-";
+  const dirs = ["北", "东北", "东", "东南", "南", "西南", "西", "西北"];
+  const idx = Math.round(degrees / 45) % 8;
+  return dirs[idx];
+}
+
+/**
+ * Get wind direction arrow icon
+ */
+export function getWindDirectionArrow(degrees: number | null): string {
+  if (degrees == null) return "";
+  const arrows = ["↑", "↗", "→", "↘", "↓", "↙", "←", "↖"];
+  const idx = Math.round(degrees / 45) % 8;
+  return arrows[idx];
+}
+
+/**
+ * Convert wind speed (km/h) to Beaufort scale level (0-12)
+ */
+export function getBeaufortScale(speedKmh: number): number {
+  if (speedKmh < 1) return 0;
+  if (speedKmh < 6) return 1;
+  if (speedKmh < 12) return 2;
+  if (speedKmh < 20) return 3;
+  if (speedKmh < 29) return 4;
+  if (speedKmh < 39) return 5;
+  if (speedKmh < 50) return 6;
+  if (speedKmh < 62) return 7;
+  if (speedKmh < 75) return 8;
+  if (speedKmh < 89) return 9;
+  if (speedKmh < 103) return 10;
+  if (speedKmh < 118) return 11;
+  return 12;
+}
+
+/**
+ * Get Chinese description for Beaufort scale level
+ */
+export function getBeaufortLabel(level: number): string {
+  const labels = [
+    "无风", "软风", "轻风", "微风", "和风",
+    "清风", "强风", "疾风", "大风", "烈风",
+    "狂风", "暴风", "飓风",
+  ];
+  return labels[Math.min(level, 12)] || "未知";
 }
 
 export async function fetchWeatherForPoints(
@@ -129,7 +222,8 @@ async function fetchSinglePointWeather(
     latitude: point.lat.toString(),
     longitude: point.lon.toString(),
     daily:
-      "temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode,windspeed_10m_max",
+      "temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,weathercode,windspeed_10m_max,winddirection_10m_dominant",
+    hourly: "weathercode",
     timezone: "auto",
     start_date: startDate,
     end_date: endDate,
@@ -146,17 +240,35 @@ async function fetchSinglePointWeather(
 
   const data = await res.json();
 
+  // Parse hourly weather codes for lightning enhancement
+  const hourlyCodes: number[] = data.hourly?.weathercode ?? [];
+
   const forecast: DailyWeather[] = [];
   if (data.daily) {
     for (let i = 0; i < data.daily.time.length; i++) {
+      const dailyCode = data.daily.weathercode[i];
+      let risk = getLightningRisk(dailyCode);
+
+      // If this day matches arrival date, enhance with hourly data
+      if (arrivalDate && data.daily.time[i] === arrivalDate && arrivalTime) {
+        const hour = parseInt(arrivalTime.split(":")[0], 10);
+        // Hourly data is indexed by day * 24 + hour
+        const dayStartIdx = i * 24;
+        const dayHourlyCodes = hourlyCodes.slice(dayStartIdx, dayStartIdx + 24);
+        risk = enhanceLightningRisk(risk, dayHourlyCodes, hour);
+      }
+
       forecast.push({
         date: data.daily.time[i],
         tempMax: data.daily.temperature_2m_max[i],
         tempMin: data.daily.temperature_2m_min[i],
         precipitationProbability:
           data.daily.precipitation_probability_max[i],
+        precipitationSum: data.daily.precipitation_sum?.[i] ?? 0,
         windSpeedMax: data.daily.windspeed_10m_max[i],
-        weatherCode: data.daily.weathercode[i],
+        windDirection: data.daily.winddirection_10m_dominant?.[i] ?? null,
+        weatherCode: dailyCode,
+        lightningRisk: risk,
       });
     }
   }

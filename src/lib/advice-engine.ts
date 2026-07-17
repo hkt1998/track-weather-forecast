@@ -2,6 +2,10 @@ import {
   PointWeather,
   DailyWeather,
   getWeatherDescription,
+  getWindDirectionLabel,
+  getWindDirectionArrow,
+  getBeaufortScale,
+  getBeaufortLabel,
 } from "./weather-service";
 
 export interface Advice {
@@ -30,27 +34,51 @@ export interface AdviceResult {
 function analyzeDaily(day: DailyWeather): Advice[] {
   const advices: Advice[] = [];
 
-  // Precipitation
+  // Precipitation probability
   if (day.precipitationProbability > 70) {
     advices.push({
       level: "warning",
       icon: "🌧️",
-      text: `降水概率 ${day.precipitationProbability}%，建议携带雨具`,
+      text: `降水概率 ${day.precipitationProbability}%，预计降水量 ${day.precipitationSum}mm，建议携带雨具`,
     });
   } else if (day.precipitationProbability > 50) {
     advices.push({
       level: "info",
       icon: "🌦️",
-      text: `降水概率 ${day.precipitationProbability}%，可考虑带伞`,
+      text: `降水概率 ${day.precipitationProbability}%，预计降水量 ${day.precipitationSum}mm，可考虑带伞`,
+    });
+  } else if (day.precipitationSum > 10) {
+    advices.push({
+      level: "warning",
+      icon: "️",
+      text: `预计降水量 ${day.precipitationSum}mm，建议携带雨具`,
+    });
+  } else if (day.precipitationSum > 5) {
+    advices.push({
+      level: "info",
+      icon: "🌦️",
+      text: `预计降水量 ${day.precipitationSum}mm，可考虑带伞`,
     });
   }
 
-  // Thunderstorm
+  // Thunderstorm / Lightning
   if (day.weatherCode >= 95) {
+    const lightningLabel =
+      day.lightningRisk === "high"
+        ? "高雷击风险"
+        : day.lightningRisk === "moderate"
+          ? "中等雷击风险"
+          : "雷暴";
     advices.push({
       level: "danger",
       icon: "⛈️",
-      text: `${getWeatherDescription(day.weatherCode)}，建议避开户外活动`,
+      text: `${getWeatherDescription(day.weatherCode)}，${lightningLabel}，建议避开户外活动`,
+    });
+  } else if (day.lightningRisk === "low") {
+    advices.push({
+      level: "info",
+      icon: "⚡",
+      text: `存在潜在雷击风险，请关注天气变化`,
     });
   }
 
@@ -85,17 +113,25 @@ function analyzeDaily(day: DailyWeather): Advice[] {
   }
 
   // Wind
-  if (day.windSpeedMax > 50) {
+  const beaufort = getBeaufortScale(day.windSpeedMax);
+  const windLabel = `${getBeaufortLabel(beaufort)}（${beaufort}级）`;
+  if (beaufort >= 10) {
     advices.push({
       level: "danger",
       icon: "🌪️",
-      text: `最大风速 ${day.windSpeedMax}km/h，强烈建议避免户外`,
+      text: `${windLabel}，${day.windSpeedMax}km/h（${getWindDirectionLabel(day.windDirection)}${getWindDirectionArrow(day.windDirection)}），强烈建议避免户外`,
     });
-  } else if (day.windSpeedMax > 30) {
+  } else if (beaufort >= 6) {
     advices.push({
       level: "warning",
       icon: "💨",
-      text: `最大风速 ${day.windSpeedMax}km/h，注意大风影响`,
+      text: `${windLabel}，${day.windSpeedMax}km/h（${getWindDirectionLabel(day.windDirection)}${getWindDirectionArrow(day.windDirection)}），注意大风影响`,
+    });
+  } else if (beaufort >= 3 && day.windDirection != null) {
+    advices.push({
+      level: "info",
+      icon: "🧭",
+      text: `${windLabel}，${day.windSpeedMax}km/h（${getWindDirectionLabel(day.windDirection)}${getWindDirectionArrow(day.windDirection)}）`,
     });
   }
 
@@ -186,10 +222,29 @@ export function generateAdvice(
     const maxPrecip = Math.max(
       ...matchedForecasts.map((d) => d.precipitationProbability)
     );
+    const totalPrecipSum = matchedForecasts.reduce(
+      (s, d) => s + d.precipitationSum, 0
+    );
+    const maxWind = Math.max(
+      ...matchedForecasts.map((d) => d.windSpeedMax)
+    );
+    const maxBeaufort = getBeaufortScale(maxWind);
+    const dominantWindDir = matchedForecasts.find(
+      (d) => d.windDirection != null
+    )?.windDirection;
+    const hasLightning = matchedForecasts.some(
+      (d) => d.lightningRisk !== "none"
+    );
     const codes = matchedForecasts.map((d) => getWeatherDescription(d.weatherCode));
     const uniqueCodes = [...new Set(codes)];
 
-    summary = `沿途气温 ${avgMin}°C ~ ${avgMax}°C，天气状况：${uniqueCodes.join("、")}，最高降水概率 ${maxPrecip}%。`;
+    summary = `沿途气温 ${avgMin}°C ~ ${avgMax}°C，天气状况：${uniqueCodes.join("、")}，最高降水概率 ${maxPrecip}%，累计降水量 ${totalPrecipSum.toFixed(1)}mm。`;
+    if (dominantWindDir != null) {
+      summary += ` 主导风向 ${getWindDirectionLabel(dominantWindDir)}，最大风力 ${maxBeaufort}级（${maxWind}km/h）。`;
+    }
+    if (hasLightning) {
+      summary += ` ️ 部分路段存在雷击风险，请注意防范。`;
+    }
 
     if (overall.length === 0) {
       summary += " 整体天气良好，适合出行！";

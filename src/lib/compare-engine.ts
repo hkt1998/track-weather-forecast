@@ -1,4 +1,5 @@
 import { SegmentRecord } from "./database";
+import { getBeaufortScale } from "./weather-service";
 
 export interface RouteScore {
   routeId: number;
@@ -19,10 +20,15 @@ interface RouteData {
 function scoreSegment(seg: SegmentRecord): number {
   let score = 100;
 
-  // Precipitation: 0mm = full marks, -10 per mm, >=10mm = 0
+  // Precipitation probability: -0.5 per percent
   if (seg.precip_prob != null) {
-    const precipPenalty = Math.min(seg.precip_prob, 100) * 0.5;
+    const precipPenalty = Math.min(seg.precip_prob, 100) * 0.3;
     score -= precipPenalty;
+  }
+
+  // Precipitation amount: -3 per mm, max -30
+  if (seg.precip_sum != null && seg.precip_sum > 0) {
+    score -= Math.min(seg.precip_sum * 3, 30);
   }
 
   // Wind: <10km/h = full, -5 per 5km/h above 10
@@ -41,6 +47,11 @@ function scoreSegment(seg: SegmentRecord): number {
     else if (seg.wmo_code >= 45) score -= 5; // Fog
     // 0-3: clear/partly cloudy - no penalty
   }
+
+  // Lightning risk penalty
+  if (seg.lightning_risk === "high") score -= 30;
+  else if (seg.lightning_risk === "moderate") score -= 20;
+  else if (seg.lightning_risk === "low") score -= 10;
 
   // Temperature: 15-25 ideal
   if (seg.temp_max != null) {
@@ -65,17 +76,27 @@ function generateHighlights(segments: SegmentRecord[]): string[] {
   const maxPrecip = Math.max(
     ...segments.map((s) => s.precip_prob ?? 0).filter((t) => t != null)
   );
+  const totalPrecipSum = segments.reduce(
+    (s, seg) => s + (seg.precip_sum ?? 0), 0
+  );
   const maxWind = Math.max(
     ...segments.map((s) => s.wind_speed_max ?? 0).filter((t) => t != null)
   );
+  const maxBeaufort = getBeaufortScale(maxWind);
 
   if (maxPrecip <= 20) highlights.push("全程降水概率低");
   if (maxPrecip > 60) highlights.push("部分路段降水概率较高");
-  if (maxWind < 20) highlights.push("风力较小");
-  if (maxWind > 40) highlights.push("注意大风路段");
+  if (totalPrecipSum > 20) highlights.push(`累计降水量较大（${totalPrecipSum.toFixed(1)}mm）`);
+  if (maxBeaufort < 4) highlights.push("风力较小");
+  if (maxBeaufort >= 6) highlights.push("注意大风路段");
   if (maxTemp <= 28 && minTemp >= 10) highlights.push("气温适宜");
   if (maxTemp > 35) highlights.push("注意高温防暑");
   if (minTemp < 0) highlights.push("注意低温结冰");
+
+  const hasHighLightning = segments.some((s) => s.lightning_risk === "high");
+  const hasModerateLightning = segments.some((s) => s.lightning_risk === "moderate");
+  if (hasHighLightning) highlights.push("⚡ 部分路段雷击风险高");
+  else if (hasModerateLightning) highlights.push("⚡ 部分路段存在雷击风险");
 
   return highlights;
 }

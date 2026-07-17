@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { ACTIVITY_TYPES, ActivityType } from "@/lib/gpx-parser";
+import { recordRecentTime } from "@/lib/recent-times";
+import DateTimePicker from "./DateTimePicker";
 
 interface TrackSummary {
   name: string;
@@ -16,6 +18,8 @@ interface TripSettingsProps {
   loadingText?: string;
 }
 
+
+
 export default function TripSettings({
   trackSummary,
   onConfirm,
@@ -23,17 +27,20 @@ export default function TripSettings({
   isLoading,
   loadingText,
 }: TripSettingsProps) {
-  // Default to tomorrow 8:00 AM
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  tomorrow.setHours(8, 0, 0, 0);
-  const defaultDateTime = tomorrow.toISOString().slice(0, 16);
+  // Default to today 8:00 AM
+  const today = new Date();
+  today.setHours(8, 0, 0, 0);
+  const defaultDateTime = today.toISOString().slice(0, 16);
 
   const [dateTime, setDateTime] = useState(defaultDateTime);
   const [selectedActivity, setSelectedActivity] = useState("walking");
 
   const handleConfirm = () => {
     if (!dateTime) return;
+    const timePart = dateTime.split("T")[1];
+    if (timePart) {
+      recordRecentTime(timePart);
+    }
     onConfirm(dateTime, selectedActivity);
   };
 
@@ -89,19 +96,17 @@ export default function TripSettings({
           ⏰ 出发设置
         </h2>
 
-        {/* Start date/time */}
+        {/* Start date/time — simplified picker */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
             出发时间
           </label>
-          <input
-            type="datetime-local"
+          <DateTimePicker
             value={dateTime}
-            onChange={(e) => setDateTime(e.target.value)}
-            className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+            onChange={setDateTime}
           />
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            选择你计划的出发日期和时间
+            选择出发日期和时间，可保存常用时间为预设
           </p>
         </div>
 

@@ -1,4 +1,4 @@
-import { getWeatherIcon, getWeatherDescription } from "@/lib/weather-service";
+import { getWeatherIcon, getWeatherDescription, getWindDirectionLabel, getWindDirectionArrow, getBeaufortScale, getBeaufortLabel } from "@/lib/weather-service";
 import { SegmentRecord } from "@/lib/database";
 import { RouteScore } from "@/lib/compare-engine";
 import { ACTIVITY_TYPES } from "@/lib/gpx-parser";
@@ -65,9 +65,19 @@ export default function CompareView({ routes, scores }: CompareViewProps) {
           const maxPrecip = Math.max(
             ...segs.map((s) => s.precip_prob ?? 0)
           );
+          const totalPrecipSum = segs.reduce(
+            (s, seg) => s + (seg.precip_sum ?? 0), 0
+          );
           const maxWind = Math.max(
             ...segs.map((s) => s.wind_speed_max ?? 0)
           );
+          const maxBeaufort = getBeaufortScale(maxWind);
+          const hasLightning = segs.some(
+            (s) => s.lightning_risk && s.lightning_risk !== "none"
+          );
+          const dominantWindDir = segs.find(
+            (s) => s.wind_direction != null
+          )?.wind_direction;
 
           return (
             <div
@@ -130,8 +140,19 @@ export default function CompareView({ routes, scores }: CompareViewProps) {
                   🌧️ <span>降水 {Math.round(maxPrecip)}%</span>
                 </div>
                 <div className="flex items-center gap-1">
-                  💨 <span>风速 {Math.round(maxWind)}km/h</span>
+                  💧 <span>累计 {totalPrecipSum.toFixed(1)}mm</span>
                 </div>
+                <div className="flex items-center gap-1">
+                  💨 <span>{maxBeaufort}级 {getBeaufortLabel(maxBeaufort)}</span>
+                  {dominantWindDir != null && (
+                    <span>{getWindDirectionLabel(dominantWindDir)}{getWindDirectionArrow(dominantWindDir)}</span>
+                  )}
+                </div>
+                {hasLightning && (
+                  <div className="flex items-center gap-1 text-red-600">
+                    ⚡ <span>雷击风险</span>
+                  </div>
+                )}
                 <div className="flex items-center gap-1">
                   🏅 <span>第 {score?.rank ?? "-"} 名</span>
                 </div>
@@ -240,9 +261,16 @@ export default function CompareView({ routes, scores }: CompareViewProps) {
                             </div>
                             <div className="flex justify-center gap-2 text-gray-400">
                               <span>🌧️{Math.round(seg.precip_prob ?? 0)}%</span>
+                              <span>💧{(seg.precip_sum ?? 0).toFixed(1)}mm</span>
                               <span>
-                                💨{Math.round(seg.wind_speed_max ?? 0)}
+                                💨{getBeaufortScale(seg.wind_speed_max ?? 0)}级
                               </span>
+                              {seg.wind_direction != null && (
+                                <span>{getWindDirectionLabel(seg.wind_direction)}</span>
+                              )}
+                              {seg.lightning_risk && seg.lightning_risk !== "none" && (
+                                <span className="text-red-500">⚡</span>
+                              )}
                             </div>
                           </div>
                         ) : (

@@ -26,7 +26,10 @@ export interface SegmentRecord {
   temp_max: number | null;
   temp_min: number | null;
   precip_prob: number | null;
+  precip_sum: number | null;
   wind_speed_max: number | null;
+  wind_direction: number | null;
+  lightning_risk: string | null;
   advice_level: string | null;
   advice_text: string | null;
 }
@@ -92,7 +95,10 @@ export async function insertRoute(data: {
     tempMax?: number | null;
     tempMin?: number | null;
     precipProb?: number | null;
+    precipSum?: number | null;
     windSpeedMax?: number | null;
+    windDirection?: number | null;
+    lightningRisk?: string | null;
     adviceLevel?: string;
     adviceText?: string;
   }>;
@@ -127,7 +133,10 @@ export async function insertRoute(data: {
         temp_max: seg.tempMax ?? null,
         temp_min: seg.tempMin ?? null,
         precip_prob: seg.precipProb ?? null,
+        precip_sum: seg.precipSum ?? null,
         wind_speed_max: seg.windSpeedMax ?? null,
+        wind_direction: seg.windDirection ?? null,
+        lightning_risk: seg.lightningRisk ?? null,
         advice_level: seg.adviceLevel || null,
         advice_text: seg.adviceText || null,
       });

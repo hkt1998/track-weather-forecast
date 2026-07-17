@@ -6,14 +6,21 @@ import {
   TrackPoint,
   SamplePoint,
   ACTIVITY_TYPES,
+  ForecastInterval,
+  resamplePoints,
+  resampleByTime,
 } from "@/lib/gpx-parser";
 import { SegmentAdvice, Advice } from "@/lib/advice-engine";
 import {
   DailyWeather,
   getWeatherDescription,
+  getWindDirectionLabel,
+  getBeaufortScale,
 } from "@/lib/weather-service";
 import { queryWeather } from "@/lib/weather-query";
 import { getRouteById } from "@/lib/database";
+import { recordRecentTime } from "@/lib/recent-times";
+import DateTimePicker from "@/components/DateTimePicker";
 
 const WeatherMap = lazy(() => import("@/components/WeatherMap"));
 
@@ -31,6 +38,8 @@ interface ResultData {
   routeId: number | null;
 }
 
+
+
 export default function ResultPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -39,6 +48,13 @@ export default function ResultPage() {
   const [showRequery, setShowRequery] = useState(false);
   const [requeryTime, setRequeryTime] = useState("");
   const [isRequerying, setIsRequerying] = useState(false);
+
+  // 预报节点间隔选择
+  const [forecastInterval, setForecastInterval] = useState<ForecastInterval>({
+    type: "distance",
+    km: 5,
+  });
+  const [isResampling, setIsResampling] = useState(false);
 
   useEffect(() => {
     const idParam = searchParams.get("id");
@@ -81,8 +97,11 @@ export default function ResultPage() {
                 tempMax: seg.temp_max ?? 0,
                 tempMin: seg.temp_min ?? 0,
                 precipitationProbability: seg.precip_prob ?? 0,
+                precipitationSum: seg.precip_sum ?? 0,
                 windSpeedMax: seg.wind_speed_max ?? 0,
+                windDirection: seg.wind_direction ?? null,
                 weatherCode: seg.wmo_code,
+                lightningRisk: (seg.lightning_risk as "none" | "low" | "moderate" | "high") ?? "none",
               }
             : null;
 
@@ -142,11 +161,30 @@ export default function ResultPage() {
         const maxPrecip = Math.max(
           ...matchedWeathers.map((d) => d.precipitationProbability)
         );
+        const totalPrecipSum = matchedWeathers.reduce(
+          (s, d) => s + d.precipitationSum, 0
+        );
+        const maxWind = Math.max(
+          ...matchedWeathers.map((d) => d.windSpeedMax)
+        );
+        const maxBeaufort = getBeaufortScale(maxWind);
+        const dominantWindDir = matchedWeathers.find(
+          (d) => d.windDirection != null
+        )?.windDirection;
+        const hasLightning = matchedWeathers.some(
+          (d) => d.lightningRisk !== "none"
+        );
         const codes = matchedWeathers.map((d) =>
           getWeatherDescription(d.weatherCode)
         );
         const uniqueCodes = [...new Set(codes)];
-        summary = `沿途气温 ${avgMin}°C ~ ${avgMax}°C，天气状况：${uniqueCodes.join("、")}，最高降水概率 ${maxPrecip}%。`;
+        summary = `沿途气温 ${avgMin}°C ~ ${avgMax}°C，天气状况：${uniqueCodes.join("、")}，最高降水概率 ${maxPrecip}%，累计降水量 ${totalPrecipSum.toFixed(1)}mm。`;
+        if (dominantWindDir != null) {
+          summary += ` 主导风向 ${getWindDirectionLabel(dominantWindDir)}，最大风力 ${maxBeaufort}级（${maxWind}km/h）。`;
+        }
+        if (hasLightning) {
+          summary += ` ⚠️ 部分路段存在雷击风险，请注意防范。`;
+        }
       }
 
       // Collect overall advices (deduplicated)
@@ -218,10 +256,21 @@ export default function ResultPage() {
     setLoading(false);
   }
 
+  // DateTimePicker handler — only record recent time
+  const handleRequeryTimeChange = (newTime: string) => {
+    setRequeryTime(newTime);
+  };
+
   async function handleRequery() {
     if (!data || !requeryTime) return;
     setIsRequerying(true);
     try {
+      // Record recent departure time
+      const timePart = requeryTime.split("T")[1];
+      if (timePart) {
+        recordRecentTime(timePart);
+      }
+
       const weatherData = await queryWeather({
         name: data.name,
         samplePoints: data.samplePoints,
@@ -245,6 +294,58 @@ export default function ResultPage() {
       alert(err instanceof Error ? err.message : "重新查询失败");
     } finally {
       setIsRequerying(false);
+    }
+  }
+
+  /**
+   * 切换预报节点间隔：重新采样并重新查询天气
+   */
+  async function handleIntervalChange(newInterval: ForecastInterval) {
+    if (!data) return;
+    setForecastInterval(newInterval);
+    setIsResampling(true);
+    try {
+      // 根据新间隔重新采样
+      let newSamplePoints: SamplePoint[];
+      if (newInterval.type === "distance") {
+        newSamplePoints = resamplePoints(
+          data.allPoints,
+          data.totalDistance,
+          newInterval.km
+        );
+      } else {
+        newSamplePoints = resampleByTime(
+          data.allPoints,
+          data.totalDistance,
+          data.startTime,
+          data.activityType,
+          newInterval.minutes
+        );
+      }
+
+      // 重新查询天气
+      const weatherData = await queryWeather({
+        name: data.name,
+        samplePoints: newSamplePoints,
+        allPoints: data.allPoints,
+        startTime: data.startTime,
+        activityType: data.activityType,
+      });
+
+      // 更新数据
+      setData({
+        ...data,
+        samplePoints: newSamplePoints,
+        segments: weatherData.advice.segments,
+        summary: weatherData.advice.summary,
+        overallAdvices: weatherData.advice.overall,
+        routeId: weatherData.routeId ?? data.routeId,
+      });
+    } catch (err) {
+      console.error("Resample failed:", err);
+      alert(err instanceof Error ? err.message : "重新采样失败");
+    } finally {
+      setIsResampling(false);
     }
   }
 
@@ -397,22 +498,19 @@ export default function ResultPage() {
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
                     新的出发时间
                   </label>
-                  <input
-                    type="datetime-local"
+                  <DateTimePicker
                     value={requeryTime}
-                    onChange={(e) => setRequeryTime(e.target.value)}
-                    className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    onChange={handleRequeryTimeChange}
                   />
                 </div>
 
                 {/* Quick adjust buttons */}
                 <div className="flex flex-wrap gap-1.5">
                   {[
-                    { label: "-2h", hours: -2 },
-                    { label: "-1h", hours: -1 },
-                    { label: "+1h", hours: 1 },
-                    { label: "+2h", hours: 2 },
-                    { label: "+3h", hours: 3 },
+                    { label: "-1h", hours: -1, days: 0 },
+                    { label: "+1h", hours: 1, days: 0 },
+                    { label: "-1d", hours: 0, days: -1 },
+                    { label: "+1d", hours: 0, days: 1 },
                   ].map((btn) => (
                     <button
                       key={btn.label}
@@ -424,8 +522,7 @@ export default function ResultPage() {
                           .split("-")
                           .map(Number);
                         const [hour, minute] = timePart.split(":").map(Number);
-                        const newHour = hour + btn.hours;
-                        const d = new Date(year, month - 1, day, newHour, minute);
+                        const d = new Date(year, month - 1, day + btn.days, hour + btn.hours, minute);
                         const pad = (n: number) =>
                           n.toString().padStart(2, "0");
                         const result = `${d.getFullYear()}-${pad(
@@ -490,11 +587,94 @@ export default function ResultPage() {
           </div>
         </div>
 
+        {/* Data source attribution */}
+        <div className="lg:col-span-3 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+          <details className="group">
+            <summary className="cursor-pointer flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors select-none">
+              <span className="text-xs transition-transform group-open:rotate-90">▶</span>
+              <span>ℹ️ 数据来源与查询说明</span>
+            </summary>
+            <div className="mt-3 pl-5 text-xs text-gray-500 dark:text-gray-400 space-y-2 leading-relaxed">
+              <p>
+                本应用的天气数据来自 <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Open-Meteo</a> 开源天气 API，该服务基于 ECMWF、DWD 等权威气象机构的数据模型，提供免费且开放的气象预报数据。
+              </p>
+              <p>查询的信息包括：</p>
+              <ul className="list-disc list-inside space-y-0.5">
+                <li>每日最高气温 / 最低气温（°C）</li>
+                <li>降水概率（%）与累计降水量（mm）</li>
+                <li>最大风速（km/h）与主导风向</li>
+                <li>WMO 标准天气代码（用于判断天气状况与雷击风险）</li>
+                <li>逐小时天气代码（用于到达时段雷击风险评估）</li>
+              </ul>
+              <p>
+                系统根据轨迹采样点坐标与预计到达时间，查询对应位置与日期的天气预报数据，并结合到达时刻的逐小时数据进行精细化风险分析。
+              </p>
+            </div>
+          </details>
+        </div>
+
         {/* Weather table - full width */}
         <div className="lg:col-span-3 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
-          <h3 className="font-semibold text-gray-700 dark:text-gray-200 mb-3">
-            📋 沿途天气详情
-          </h3>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+            <h3 className="font-semibold text-gray-700 dark:text-gray-200">
+              📋 沿途天气详情
+            </h3>
+            {/* 间隔选择器 */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                节点间隔：
+              </span>
+              <div className="flex gap-1">
+                <button
+                  onClick={() =>
+                    handleIntervalChange({ type: "distance", km: 1 })
+                  }
+                  disabled={isResampling}
+                  className={`px-3 py-1 text-xs rounded-md border transition ${
+                    forecastInterval.type === "distance" &&
+                    forecastInterval.km === 1
+                      ? "border-blue-500 bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400"
+                      : "border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-blue-400"
+                  } ${isResampling ? "opacity-50 cursor-not-allowed" : ""}`}
+                >
+                  1 km
+                </button>
+                <button
+                  onClick={() =>
+                    handleIntervalChange({ type: "distance", km: 5 })
+                  }
+                  disabled={isResampling}
+                  className={`px-3 py-1 text-xs rounded-md border transition ${
+                    forecastInterval.type === "distance" &&
+                    forecastInterval.km === 5
+                      ? "border-blue-500 bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400"
+                      : "border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-blue-400"
+                  } ${isResampling ? "opacity-50 cursor-not-allowed" : ""}`}
+                >
+                  5 km
+                </button>
+                <button
+                  onClick={() =>
+                    handleIntervalChange({ type: "time", minutes: 30 })
+                  }
+                  disabled={isResampling}
+                  className={`px-3 py-1 text-xs rounded-md border transition ${
+                    forecastInterval.type === "time"
+                      ? "border-blue-500 bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400"
+                      : "border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-blue-400"
+                  } ${isResampling ? "opacity-50 cursor-not-allowed" : ""}`}
+                >
+                  每30分钟
+                </button>
+              </div>
+              {isResampling && (
+                <div className="flex items-center gap-1 text-xs text-gray-500">
+                  <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                  <span>更新中...</span>
+                </div>
+              )}
+            </div>
+          </div>
           <WeatherTable segments={data.segments} />
         </div>
       </main>

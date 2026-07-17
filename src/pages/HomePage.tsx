@@ -5,7 +5,7 @@ import TripSettings from "@/components/TripSettings";
 import {
   TrackPoint,
   SamplePoint,
-  parseGpx,
+  parseTrackFile,
 } from "@/lib/gpx-parser";
 import { queryWeather } from "@/lib/weather-query";
 
@@ -31,14 +31,15 @@ export default function HomePage() {
   // Step 1: Parse GPX file in browser
   const handleFileSelected = useCallback(async (file: File) => {
     try {
-      setState({ status: "parsing", loadingText: "正在解析 GPX 文件..." });
+      setState({ status: "parsing", loadingText: "正在解析轨迹文件..." });
 
-      if (!file.name.toLowerCase().endsWith(".gpx")) {
-        throw new Error("请上传 .gpx 格式的文件");
+      const ext = file.name.toLowerCase().split(".").pop();
+      if (ext !== "gpx" && ext !== "kml") {
+        throw new Error("请上传 .gpx 或 .kml 格式的文件");
       }
 
       const xmlString = await file.text();
-      const result = parseGpx(xmlString);
+      const result = parseTrackFile(file.name, xmlString);
 
       // Limit allPoints to 2000 for rendering performance
       const limitedPoints =
@@ -117,8 +118,8 @@ export default function HomePage() {
   }, []);
 
   return (
-    <div className="min-h-[calc(100vh-52px)] flex flex-col items-center justify-center bg-gradient-to-br from-blue-50 via-white to-green-50 dark:from-gray-900 dark:via-gray-950 dark:to-gray-900 px-4 py-8">
-      <div className="w-full max-w-xl space-y-8">
+    <div className="min-h-[calc(100vh-52px)] flex flex-col items-center bg-gradient-to-br from-blue-50 via-white to-green-50 dark:from-gray-900 dark:via-gray-950 dark:to-gray-900 px-4 py-8">
+      <div className="w-full max-w-xl space-y-8 my-auto">
         {/* Header - always visible */}
         <div className="text-center space-y-2">
           <h1 className="text-4xl font-bold tracking-tight text-gray-900 dark:text-white">
@@ -135,10 +136,10 @@ export default function HomePage() {
             <FileUpload
               onFileSelected={handleFileSelected}
               isLoading={state.status === "parsing"}
-              loadingText="正在解析 GPX 文件..."
+              loadingText="正在解析轨迹文件..."
             />
             <div className="text-center text-sm text-gray-400 dark:text-gray-500 space-y-1">
-              <p>支持从 Strava、佳明、两步路等导出的 GPX 文件</p>
+              <p>支持从 Strava、佳明、两步路等导出的 GPX / KML 文件</p>
               <p>轨迹越长，采样点越多，分析越准确</p>
             </div>
             {/* Entry card for history/compare */}

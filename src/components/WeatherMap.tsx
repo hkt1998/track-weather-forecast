@@ -12,6 +12,10 @@ import { TrackPoint } from "@/lib/gpx-parser";
 import {
   getWeatherDescription,
   getWeatherIcon,
+  getWindDirectionLabel,
+  getWindDirectionArrow,
+  getBeaufortScale,
+  getBeaufortLabel,
 } from "@/lib/weather-service";
 import { SegmentAdvice } from "@/lib/advice-engine";
 
@@ -53,8 +57,8 @@ export default function WeatherMap({
       style={{ minHeight: "400px" }}
     >
       <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        attribution='&copy; <a href="https://carto.com/attributions">CartoDB</a>'
+        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
       />
 
       {/* Track line */}
@@ -128,8 +132,23 @@ export default function WeatherMap({
                     <div className="grid grid-cols-2 gap-1 text-xs mt-2">
                       <div>🌡️ 最高 {w.tempMax}°C</div>
                       <div>🌡️ 最低 {w.tempMin}°C</div>
-                      <div>🌧️ 降水 {w.precipitationProbability}%</div>
-                      <div>💨 风速 {w.windSpeedMax}km/h</div>
+                      <div>🌧️ 概率 {w.precipitationProbability}%</div>
+                      <div>💧 降水量 {w.precipitationSum.toFixed(1)}mm</div>
+                      <div>💨 {getBeaufortScale(w.windSpeedMax)}级 {getBeaufortLabel(getBeaufortScale(w.windSpeedMax))}</div>
+                      {w.windDirection != null && (
+                        <div>🧭 {getWindDirectionLabel(w.windDirection)}{getWindDirectionArrow(w.windDirection)}</div>
+                      )}
+                      {w.lightningRisk !== "none" && (
+                        <div className={
+                          w.lightningRisk === "high"
+                            ? "text-red-600 font-bold"
+                            : w.lightningRisk === "moderate"
+                              ? "text-orange-600"
+                              : "text-yellow-600"
+                        }>
+                          ⚡ 雷击 {w.lightningRisk === "high" ? "高" : w.lightningRisk === "moderate" ? "中" : "低"}
+                        </div>
+                      )}
                     </div>
 
                     {seg.advices.length > 0 && (

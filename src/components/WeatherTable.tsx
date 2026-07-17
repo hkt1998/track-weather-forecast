@@ -1,5 +1,12 @@
 import { SegmentAdvice } from "@/lib/advice-engine";
-import { getWeatherDescription, getWeatherIcon } from "@/lib/weather-service";
+import {
+  getWeatherDescription,
+  getWeatherIcon,
+  getWindDirectionLabel,
+  getWindDirectionArrow,
+  getBeaufortScale,
+  getBeaufortLabel,
+} from "@/lib/weather-service";
 
 interface WeatherTableProps {
   segments: SegmentAdvice[];
@@ -16,8 +23,11 @@ export default function WeatherTable({ segments }: WeatherTableProps) {
             <th className="px-3 py-2">到达时间</th>
             <th className="px-3 py-2">天气</th>
             <th className="px-3 py-2">温度</th>
-            <th className="px-3 py-2">降水</th>
-            <th className="px-3 py-2">风速</th>
+            <th className="px-3 py-2">降水概率</th>
+            <th className="px-3 py-2">降水量</th>
+            <th className="px-3 py-2">风力</th>
+            <th className="px-3 py-2">风向</th>
+            <th className="px-3 py-2">雷击</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -80,12 +90,63 @@ export default function WeatherTable({ segments }: WeatherTableProps) {
                   {w ? (
                     <span
                       className={
-                        w.windSpeedMax > 30
+                        w.precipitationSum > 10
+                          ? "text-blue-600 font-medium"
+                          : ""
+                      }
+                    >
+                      {w.precipitationSum.toFixed(1)} mm
+                    </span>
+                  ) : (
+                    <span className="text-gray-400">-</span>
+                  )}
+                </td>
+                <td className="px-3 py-2">
+                  {w ? (
+                    <span
+                      className={
+                        getBeaufortScale(w.windSpeedMax) >= 6
                           ? "text-amber-600 font-medium"
                           : ""
                       }
                     >
-                      {w.windSpeedMax} km/h
+                      {getBeaufortScale(w.windSpeedMax)}级 {getBeaufortLabel(getBeaufortScale(w.windSpeedMax))}
+                      <span className="text-gray-400 text-xs ml-1">({w.windSpeedMax}km/h)</span>
+                    </span>
+                  ) : (
+                    <span className="text-gray-400">-</span>
+                  )}
+                </td>
+                <td className="px-3 py-2">
+                  {w?.windDirection != null ? (
+                    <span className="text-gray-600 dark:text-gray-300">
+                      {getWindDirectionLabel(w.windDirection)}
+                      <span className="ml-1">{getWindDirectionArrow(w.windDirection)}</span>
+                    </span>
+                  ) : (
+                    <span className="text-gray-400">-</span>
+                  )}
+                </td>
+                <td className="px-3 py-2">
+                  {w ? (
+                    <span
+                      className={
+                        w.lightningRisk === "high"
+                          ? "text-red-600 font-bold"
+                          : w.lightningRisk === "moderate"
+                            ? "text-orange-600 font-medium"
+                            : w.lightningRisk === "low"
+                              ? "text-yellow-600"
+                              : "text-green-600"
+                      }
+                    >
+                      {w.lightningRisk === "high"
+                        ? "⚡ 高"
+                        : w.lightningRisk === "moderate"
+                          ? "⚡ 中"
+                          : w.lightningRisk === "low"
+                            ? "⚡ 低"
+                            : "✓ 无"}
                     </span>
                   ) : (
                     <span className="text-gray-400">-</span>

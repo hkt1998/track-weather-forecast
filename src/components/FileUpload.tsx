@@ -28,7 +28,7 @@ export default function FileUpload({
       e.preventDefault();
       setIsDragging(false);
       const file = e.dataTransfer.files[0];
-      if (file && file.name.toLowerCase().endsWith(".gpx")) {
+      if (file && (file.name.toLowerCase().endsWith(".gpx") || file.name.toLowerCase().endsWith(".kml"))) {
         onFileSelected(file);
       }
     },
@@ -63,7 +63,7 @@ export default function FileUpload({
     >
       <input
         type="file"
-        accept=".gpx"
+        accept=".gpx,.kml"
         onChange={handleChange}
         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
         disabled={isLoading}
@@ -81,10 +81,10 @@ export default function FileUpload({
           <div className="text-5xl">📍</div>
           <div>
             <p className="text-lg font-medium text-gray-700 dark:text-gray-200">
-              拖拽 GPX 文件到此处，或点击选择文件
+              拖拽 GPX / KML 文件到此处，或点击选择文件
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              支持 .gpx 格式的轨迹文件
+              支持 .gpx 和 .kml 格式的轨迹文件
             </p>
           </div>
         </div>

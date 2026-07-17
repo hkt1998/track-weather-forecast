@@ -178,6 +178,32 @@ export default function ComparePage() {
           </div>
         )}
 
+        {/* Data source attribution */}
+        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
+          <details className="group">
+            <summary className="cursor-pointer flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors select-none">
+              <span className="text-xs transition-transform group-open:rotate-90">▶</span>
+              <span>ℹ️ 数据来源与查询说明</span>
+            </summary>
+            <div className="mt-3 pl-5 text-xs text-gray-500 dark:text-gray-400 space-y-2 leading-relaxed">
+              <p>
+                本应用的天气数据来自 <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Open-Meteo</a> 开源天气 API，该服务基于 ECMWF、DWD 等权威气象机构的数据模型，提供免费且开放的气象预报数据。
+              </p>
+              <p>查询的信息包括：</p>
+              <ul className="list-disc list-inside space-y-0.5">
+                <li>每日最高气温 / 最低气温（°C）</li>
+                <li>降水概率（%）与累计降水量（mm）</li>
+                <li>最大风速（km/h）与主导风向</li>
+                <li>WMO 标准天气代码（用于判断天气状况与雷击风险）</li>
+                <li>逐小时天气代码（用于到达时段雷击风险评估）</li>
+              </ul>
+              <p>
+                系统根据轨迹采样点坐标与预计到达时间，查询对应位置与日期的天气预报数据，并结合到达时刻的逐小时数据进行精细化风险分析。
+              </p>
+            </div>
+          </details>
+        </div>
+
         {/* Weather legend */}
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4">
           <h3 className="font-semibold text-gray-700 dark:text-gray-200 mb-2 text-sm">
