@@ -59,7 +59,6 @@ interface GpxDB extends DBSchema {
     indexes: {};
   };
 }
-
 const DB_NAME = "gpx-weather-db";
 const DB_VERSION = 2;
 
@@ -119,95 +118,122 @@ export async function insertRoute(data: {
     adviceText?: string;
   }>;
 }): Promise<number> {
-  const db = await getDb();
-  const tx = db.transaction(["routes", "segments"], "readwrite");
+  try {
+    const db = await getDb();
+    const tx = db.transaction(["routes", "segments"], "readwrite");
 
-  const routeId = await tx.objectStore("routes").add({
-    id: 0,
-    name: data.name,
-    distance_km: data.distanceKm,
-    points_count: data.pointsCount,
-    activity_type: data.activityType || null,
-    start_time: data.startTime || null,
-    created_at: new Date().toISOString(),
-    all_points_json: data.allPointsJson,
-  });
+    const routeId = await tx.objectStore("routes").add({
+      name: data.name,
+      distance_km: data.distanceKm,
+      points_count: data.pointsCount,
+      activity_type: data.activityType || null,
+      start_time: data.startTime || null,
+      created_at: new Date().toISOString(),
+      all_points_json: data.allPointsJson,
+    } as any);
 
-  if (data.segments.length > 0) {
-    const segStore = tx.objectStore("segments");
-    for (const seg of data.segments) {
-      await segStore.add({
-        id: 0,
-        route_id: routeId,
-        point_index: seg.pointIndex,
-        distance_km: seg.distanceKm,
-        lat: seg.lat,
-        lon: seg.lon,
-        arrival_date: seg.arrivalDate || null,
-        arrival_time: seg.arrivalTime || null,
-        wmo_code: seg.wmoCode ?? null,
-        temp_max: seg.tempMax ?? null,
-        temp_min: seg.tempMin ?? null,
-        precip_prob: seg.precipProb ?? null,
-        precip_sum: seg.precipSum ?? null,
-        wind_speed_max: seg.windSpeedMax ?? null,
-        wind_direction: seg.windDirection ?? null,
-        lightning_risk: seg.lightningRisk ?? null,
-        advice_level: seg.adviceLevel || null,
-        advice_text: seg.adviceText || null,
-      });
+    if (data.segments.length > 0) {
+      const segStore = tx.objectStore("segments");
+      for (const seg of data.segments) {
+        await segStore.add({
+          route_id: routeId,
+          point_index: seg.pointIndex,
+          distance_km: seg.distanceKm,
+          lat: seg.lat,
+          lon: seg.lon,
+          arrival_date: seg.arrivalDate || null,
+          arrival_time: seg.arrivalTime || null,
+          wmo_code: seg.wmoCode ?? null,
+          temp_max: seg.tempMax ?? null,
+          temp_min: seg.tempMin ?? null,
+          precip_prob: seg.precipProb ?? null,
+          precip_sum: seg.precipSum ?? null,
+          wind_speed_max: seg.windSpeedMax ?? null,
+          wind_direction: seg.windDirection ?? null,
+          lightning_risk: seg.lightningRisk ?? null,
+          advice_level: seg.adviceLevel || null,
+          advice_text: seg.adviceText || null,
+        } as any);
+      }
     }
-  }
 
-  await tx.done;
-  return routeId;
+    await tx.done;
+    return routeId;
+  } catch (err) {
+    console.error("[insertRoute] error:", err);
+    throw err;
+  }
 }
 
 export async function getAllRoutes(): Promise<
   Omit<RouteRecord, "all_points_json">[]
 > {
-  const db = await getDb();
-  const all = await db.getAll("routes");
-  all.sort((a, b) => b.created_at.localeCompare(a.created_at));
-  return all.map(({ all_points_json, ...rest }) => rest);
+  try {
+    const db = await getDb();
+    const all = await db.getAll("routes");
+    all.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    return all.map(({ all_points_json, ...rest }) => rest);
+  } catch (err) {
+    console.error("[getAllRoutes] error:", err);
+    return [];
+  }
 }
 
 export async function getRouteById(
   id: number
 ): Promise<(RouteRecord & { segments: SegmentRecord[] }) | null> {
-  const db = await getDb();
-  const route = await db.get("routes", id);
-  if (!route) return null;
+  try {
+    const db = await getDb();
+    const route = await db.get("routes", id);
+    if (!route) return null;
 
-  const allSegs = await db.getAllFromIndex("segments", "by-route", id);
-  allSegs.sort((a, b) => a.point_index - b.point_index);
+    const allSegs = await db.getAllFromIndex("segments", "by-route", id);
+    allSegs.sort((a, b) => a.point_index - b.point_index);
 
-  return { ...route, segments: allSegs };
+    return { ...route, segments: allSegs };
+  } catch (err) {
+    console.error("[getRouteById] error:", err);
+    return null;
+  }
 }
 
 export async function saveWeatherCache(routeId: number, weatherJson: string): Promise<void> {
-  const db = await getDb();
-  await db.put("weatherCache", { routeId, weatherJson, cachedAt: new Date().toISOString() });
+  try {
+    const db = await getDb();
+    await db.put("weatherCache", { routeId, weatherJson, cachedAt: new Date().toISOString() });
+  } catch (err) {
+    console.error("[saveWeatherCache] error:", err);
+  }
 }
 
 export async function getWeatherCache(routeId: number): Promise<WeatherCacheRecord | null> {
-  const db = await getDb();
-  const record = await db.get("weatherCache", routeId);
-  return record ?? null;
+  try {
+    const db = await getDb();
+    const record = await db.get("weatherCache", routeId);
+    return record ?? null;
+  } catch (err) {
+    console.error("[getWeatherCache] error:", err);
+    return null;
+  }
 }
 
 export async function deleteRoute(id: number): Promise<boolean> {
-  const db = await getDb();
-  const tx = db.transaction(["routes", "segments"], "readwrite");
+  try {
+    const db = await getDb();
+    const tx = db.transaction(["routes", "segments"], "readwrite");
 
-  const segIndex = tx.objectStore("segments").index("by-route");
-  let cursor = await segIndex.openCursor(id);
-  while (cursor) {
-    await cursor.delete();
-    cursor = await cursor.continue();
+    const segIndex = tx.objectStore("segments").index("by-route");
+    let cursor = await segIndex.openCursor(id);
+    while (cursor) {
+      await cursor.delete();
+      cursor = await cursor.continue();
+    }
+
+    await tx.objectStore("routes").delete(id);
+    await tx.done;
+    return true;
+  } catch (err) {
+    console.error("[deleteRoute] error:", err);
+    return false;
   }
-
-  await tx.objectStore("routes").delete(id);
-  await tx.done;
-  return true;
 }

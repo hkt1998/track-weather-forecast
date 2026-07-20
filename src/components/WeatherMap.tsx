@@ -127,7 +127,7 @@ export default function WeatherMap({
         />
 
         {/* Track line — segmented coloring or fallback */}
-        {segments.length > 0
+        {segments.length > 0 && allPoints.length > 0
           ? segments.map((seg, idx) => {
               const startIdx = seg.pointIndex;
               const endIdx =
@@ -136,7 +136,9 @@ export default function WeatherMap({
                   : allPoints.length - 1;
               const segPositions: [number, number][] = [];
               for (let i = startIdx; i <= endIdx; i++) {
-                segPositions.push([allPoints[i].lat, allPoints[i].lon]);
+                if (allPoints[i]) {
+                  segPositions.push([allPoints[i].lat, allPoints[i].lon]);
+                }
               }
               return (
                 <Polyline
@@ -158,7 +160,7 @@ export default function WeatherMap({
             )}
 
       {/* Sample point markers */}
-      {segments.map((seg, idx) => {
+      {segments.filter(seg => seg.lat != null && seg.lon != null).map((seg, idx) => {
         const w = seg.weather;
         const hasDanger = seg.advices.some((a) => a.level === "danger");
         const hasWarning = seg.advices.some((a) => a.level === "warning");

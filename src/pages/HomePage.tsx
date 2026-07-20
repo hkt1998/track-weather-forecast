@@ -83,6 +83,14 @@ export default function HomePage() {
           activityType,
         });
 
+        if (!weatherData) {
+          setState({ status: "error", message: "天气查询请求被中断，请重试" });
+          setTimeout(() => {
+            setState({ status: "settings", parsedData: state.parsedData });
+          }, 0);
+          return;
+        }
+
         // Store results in sessionStorage and navigate
         sessionStorage.setItem(
           "gpx-result",

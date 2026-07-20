@@ -253,24 +253,30 @@ export default function ResultPage() {
   }
 
   function loadFromSession() {
-    const stored = sessionStorage.getItem("gpx-result");
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      setData({
-        name: parsed.name,
-        totalDistance: parsed.totalDistance,
-        pointCount: parsed.pointCount,
-        allPoints: parsed.allPoints,
-        samplePoints: parsed.samplePoints || [],
-        segments: parsed.advice.segments,
-        summary: parsed.advice.summary,
-        overallAdvices: parsed.advice.overall,
-        startTime: parsed.startTime || "",
-        activityType: parsed.activityType || "",
-        routeId: parsed.routeId ?? null,
-      });
+    try {
+      const stored = sessionStorage.getItem("gpx-result");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setData({
+          name: parsed.name,
+          totalDistance: parsed.totalDistance,
+          pointCount: parsed.pointCount,
+          allPoints: parsed.allPoints,
+          samplePoints: parsed.samplePoints || [],
+          segments: parsed.advice.segments,
+          summary: parsed.advice.summary,
+          overallAdvices: parsed.advice.overall,
+          startTime: parsed.startTime || "",
+          activityType: parsed.activityType || "",
+          routeId: parsed.routeId ?? null,
+        });
+      }
+    } catch (err) {
+      console.error("[loadFromSession] error:", err);
+      setData(null);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   // DateTimePicker handler — only record recent time
@@ -295,6 +301,11 @@ export default function ResultPage() {
         startTime: requeryTime,
         activityType: data.activityType,
       });
+
+      if (!weatherData) {
+        alert("天气查询请求被中断，请重试");
+        return;
+      }
 
       // Update UI directly
       setData({
@@ -348,6 +359,11 @@ export default function ResultPage() {
         startTime: data.startTime,
         activityType: data.activityType,
       });
+
+      if (!weatherData) {
+        alert("天气查询请求被中断，请重试");
+        return;
+      }
 
       // 更新数据
       setData({

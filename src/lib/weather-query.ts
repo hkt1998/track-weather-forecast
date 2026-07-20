@@ -25,77 +25,92 @@ export async function queryWeather(params: {
   allPoints: TrackPoint[];
   startTime: string;
   activityType: string;
-}): Promise<WeatherQueryResult> {
+}): Promise<WeatherQueryResult | null> {
   const { name, samplePoints, allPoints, startTime, activityType } = params;
 
-  // Estimate arrival times
-  const pointsToQuery = estimateArrivalTimes(
-    samplePoints,
-    startTime,
-    activityType
-  );
-
-  // Fetch weather data
-  const weatherResult = await fetchWeatherForPoints(pointsToQuery);
-
-  // Generate advice
-  const adviceResult = generateAdvice(weatherResult.points);
-
-  // Calculate total distance from sample points
-  const totalDistance =
-    samplePoints.length > 0
-      ? samplePoints[samplePoints.length - 1].distanceFromStart
-      : 0;
-
-  // Auto-save to IndexedDB
-  let routeId: number | null = null;
   try {
-    routeId = await insertRoute({
-      name: name || "未命名轨迹",
-      distanceKm: totalDistance,
-      pointsCount: samplePoints.length,
-      activityType,
+    // Estimate arrival times
+    const pointsToQuery = estimateArrivalTimes(
+      samplePoints,
       startTime,
-      allPointsJson: JSON.stringify(allPoints || []),
-      segments: adviceResult.segments.map((seg) => ({
-        pointIndex: seg.pointIndex,
-        distanceKm: seg.distanceKm,
-        lat: seg.lat,
-        lon: seg.lon,
-        arrivalDate: seg.arrivalDate,
-        arrivalTime: seg.arrivalTime,
-        wmoCode: seg.weather?.weatherCode ?? null,
-        tempMax: seg.weather?.tempMax ?? null,
-        tempMin: seg.weather?.tempMin ?? null,
-        precipProb: seg.weather?.precipitationProbability ?? null,
-        precipSum: seg.weather?.precipitationSum ?? null,
-        windSpeedMax: seg.weather?.windSpeedMax ?? null,
-        windDirection: seg.weather?.windDirection ?? null,
-        lightningRisk: seg.weather?.lightningRisk ?? null,
-        adviceLevel: seg.advices.some((a) => a.level === "danger")
-          ? "danger"
-          : seg.advices.some((a) => a.level === "warning")
-          ? "warning"
-          : "info",
-        adviceText: seg.advices.map((a) => a.text).join(" | ") || undefined,
-      })),
-    });
-  } catch (dbError) {
-    console.error("Failed to save route to database:", dbError);
-  }
-
-  const result: WeatherQueryResult = {
-    weather: weatherResult,
-    advice: adviceResult,
-    routeId,
-  };
-
-  // Fire-and-forget: cache weather data for offline use
-  if (routeId !== null) {
-    saveWeatherCache(routeId, JSON.stringify(result)).catch((err) =>
-      console.error("Failed to cache weather:", err)
+      activityType
     );
-  }
 
-  return result;
+    // Fetch weather data
+    const weatherResult = await fetchWeatherForPoints(pointsToQuery);
+
+    // Generate advice
+    const adviceResult = generateAdvice(weatherResult.points);
+
+    // Calculate total distance from sample points
+    const totalDistance =
+      samplePoints.length > 0
+        ? samplePoints[samplePoints.length - 1].distanceFromStart
+        : 0;
+
+    // Auto-save to IndexedDB
+    let routeId: number | null = null;
+    try {
+      routeId = await insertRoute({
+        name: name || "未命名轨迹",
+        distanceKm: totalDistance,
+        pointsCount: samplePoints.length,
+        activityType,
+        startTime,
+        allPointsJson: JSON.stringify(allPoints || []),
+        segments: adviceResult.segments.map((seg) => ({
+          pointIndex: seg.pointIndex,
+          distanceKm: seg.distanceKm,
+          lat: seg.lat,
+          lon: seg.lon,
+          arrivalDate: seg.arrivalDate,
+          arrivalTime: seg.arrivalTime,
+          wmoCode: seg.weather?.weatherCode ?? null,
+          tempMax: seg.weather?.tempMax ?? null,
+          tempMin: seg.weather?.tempMin ?? null,
+          precipProb: seg.weather?.precipitationProbability ?? null,
+          precipSum: seg.weather?.precipitationSum ?? null,
+          windSpeedMax: seg.weather?.windSpeedMax ?? null,
+          windDirection: seg.weather?.windDirection ?? null,
+          lightningRisk: seg.weather?.lightningRisk ?? null,
+          adviceLevel: seg.advices.some((a) => a.level === "danger")
+            ? "danger"
+            : seg.advices.some((a) => a.level === "warning")
+            ? "warning"
+            : "info",
+          adviceText: seg.advices.map((a) => a.text).join(" | ") || undefined,
+        })),
+      });
+    } catch (dbError) {
+      console.error("[queryWeather] Failed to save route to database:", dbError);
+    }
+
+    const result: WeatherQueryResult = {
+      weather: weatherResult,
+      advice: adviceResult,
+      routeId,
+    };
+
+    // Fire-and-forget: cache weather data for offline use
+    if (routeId !== null) {
+      saveWeatherCache(routeId, JSON.stringify(result)).catch((err) =>
+        console.error("[queryWeather] Failed to cache weather:", err)
+      );
+    }
+
+    return result;
+  } catch (err) {
+    // fetch abort 在不同浏览器中可能抛出 DOMException 或 TypeError
+    const isAbort =
+      (err instanceof DOMException && err.name === "AbortError") ||
+      (err instanceof Error &&
+        ((err as any).cause?.name === "AbortError" ||
+          /abort/i.test(err.message)));
+    if (isAbort) {
+      console.error("[queryWeather] Request aborted, returning null:", err);
+      return null;
+    }
+    console.error("[queryWeather] error:", err);
+    throw err;
+  }
 }
